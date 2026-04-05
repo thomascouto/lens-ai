@@ -84,6 +84,9 @@
       ]
     }
   },
+  "pnpm": {
+    "onlyBuiltDependencies": ["@vscode/vsce-sign", "keytar", "lefthook"]
+  },
   "scripts": {
     "vscode:prepublish": "pnpm run compile",
     "compile": "tsc -p ./",
