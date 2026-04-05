@@ -1,0 +1,115 @@
+{
+  "name": "lens-ai",
+  "displayName": "Lens AI",
+  "description": "Agnostic configuration & scope inspector for GitHub Copilot, Cursor, and LLMs.",
+  "license": "MIT",
+  "version": "0.1.0",
+  "publisher": "thomasswarch",
+  "icon": "resources/lens-icon.png",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "copilot",
+    "cursor",
+    "cline",
+    "continue",
+    "AI",
+    "configuration",
+    "inspector"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "lens.openMatrix",
+        "title": "Lens AI: Open Scope Matrix",
+        "icon": "$(table)"
+      },
+      {
+        "command": "lens.refresh",
+        "title": "Lens AI: Refresh",
+        "icon": "$(refresh)"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "lens-sidebar",
+          "title": "Lens AI",
+          "icon": "resources/lens-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "lens-sidebar": [
+        {
+          "id": "lens-engines",
+          "name": "Active Engines",
+          "icon": "$(extensions)",
+          "contextualTitle": "Lens AI"
+        },
+        {
+          "id": "lens-configs",
+          "name": "Effective Configs",
+          "icon": "$(settings-gear)",
+          "contextualTitle": "Lens AI"
+        },
+        {
+          "id": "lens-rules",
+          "name": "Instruction Files",
+          "icon": "$(file-text)",
+          "contextualTitle": "Lens AI"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "lens.refresh",
+          "when": "view == lens-engines || view == lens-configs || view == lens-rules",
+          "group": "navigation"
+        },
+        {
+          "command": "lens.openMatrix",
+          "when": "view == lens-configs",
+          "group": "navigation"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "pnpm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src",
+    "lint:fix": "eslint src --fix",
+    "format": "prettier --check \"src/**/*.ts\"",
+    "format:fix": "prettier --write \"src/**/*.ts\"",
+    "package": "vsce package",
+    "postinstall": "lefthook install"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@trivago/prettier-plugin-sort-imports": "^6.0.2",
+    "@types/node": "^25.5.2",
+    "@types/vscode": "^1.110.0",
+    "@vscode/vsce": "^3.7.1",
+    "eslint": "^10.2.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.5",
+    "globals": "^17.4.0",
+    "jiti": "^2.6.1",
+    "lefthook": "^2.1.4",
+    "prettier": "^3.8.1",
+    "typescript": "^6.0.2",
+    "typescript-eslint": "^8.58.0"
+  }
+}

@@ -1,0 +1,22 @@
+pre-commit:
+  parallel: true
+  jobs:
+    - name: lint-staged
+      glob: "src/**/*.{ts,mts}"
+      run: pnpm eslint {staged_files}
+
+    - name: format-staged
+      glob: "src/**/*.{ts,mts}"
+      run: pnpm prettier --check {staged_files}
+
+pre-push:
+  parallel: true
+  jobs:
+    - name: typecheck
+      run: pnpm typecheck
+
+    - name: lint
+      run: pnpm lint
+
+    - name: format
+      run: pnpm format

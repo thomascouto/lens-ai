@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+
+# Build output
+out/
+dist/
+
+# Packaged extension
+*.vsix
+
+# TypeScript
+*.js.map
+*.d.ts.map
+
+# Environment & secrets
+.env
+.env.*
+!.env.example
+
+# Editors
+.vscode/*
+!.vscode/launch.json
+!.vscode/extensions.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Test output
+coverage/
+.vscode-test/
