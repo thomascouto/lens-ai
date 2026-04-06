@@ -85,7 +85,11 @@
     }
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["@vscode/vsce-sign", "keytar", "lefthook"]
+    "onlyBuiltDependencies": [
+      "@vscode/vsce-sign",
+      "keytar",
+      "lefthook"
+    ]
   },
   "scripts": {
     "vscode:prepublish": "pnpm run compile",
@@ -97,9 +101,13 @@
     "format": "prettier --check \"src/**/*.ts\"",
     "format:fix": "prettier --write \"src/**/*.ts\"",
     "package": "vsce package",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:watch": "vitest",
     "postinstall": "lefthook install"
   },
   "devDependencies": {
+    "@vitest/coverage-v8": "^4.1.2",
     "@commitlint/cli": "^20.5.0",
     "@commitlint/config-conventional": "^20.5.0",
     "@eslint/js": "^10.0.1",
@@ -115,6 +123,7 @@
     "lefthook": "^2.1.4",
     "prettier": "^3.8.1",
     "typescript": "^6.0.2",
-    "typescript-eslint": "^8.58.0"
+    "typescript-eslint": "^8.58.0",
+    "vitest": "^4.1.2"
   }
 }

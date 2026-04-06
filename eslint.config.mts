@@ -7,7 +7,10 @@ import eslintPluginPrettierRecommended from "eslint-plugin-prettier/recommended"
 
 export default defineConfig([
   {
-    files: ["**/*.{js,mjs,cjs,ts,mts,cts}"],
+    ignores: ["coverage/**", "out/**"],
+  },
+  {
+    files: ["src/**/*.{js,ts}"],
     plugins: { js },
     extends: ["js/recommended", eslintPluginPrettierRecommended],
     languageOptions: {
@@ -18,6 +21,9 @@ export default defineConfig([
       },
     },
   },
-  tseslint.configs.strictTypeChecked,
+  {
+    files: ["src/**/*.{js,ts}"],
+    extends: [tseslint.configs.strictTypeChecked],
+  },
   eslintConfigPrettier,
 ]);
