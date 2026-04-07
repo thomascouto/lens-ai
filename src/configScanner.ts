@@ -16,18 +16,50 @@ import { join } from "path";
 import { workspace } from "vscode";
 
 import { type AiEngine, type ConfigEntry, ConfigInspector } from "./services/ConfigInspector";
+import {
+  type EngineFileConfig,
+  type FileConfigEntry,
+  FileConfigReader,
+  type FileScope,
+  type ScopedFile,
+} from "./services/FileConfigReader";
 
-export { ConfigInspector, type AiEngine, type ConfigEntry };
+export {
+  ConfigInspector,
+  FileConfigReader,
+  type AiEngine,
+  type ConfigEntry,
+  type EngineFileConfig,
+  type FileConfigEntry,
+  type FileScope,
+  type ScopedFile,
+};
 
 // ---------------------------------------------------------------------------
 // Rule / Instruction file detection
 // ---------------------------------------------------------------------------
 
 const RULE_FILES = [
-  ".cursorrules",
-  ".clinerules",
-  ".instructions.md",
+  // GitHub Copilot
   ".github/copilot-instructions.md",
+  ".instructions.md",
+  // Cursor
+  ".cursorrules",
+  // Cline / Roo Code
+  ".clinerules",
+  ".roomodes",
+  // Claude Code
+  "CLAUDE.md",
+  ".claude/CLAUDE.md",
+  // Windsurf
+  ".windsurfrules",
+  // Aider
+  ".aiderrules",
+  // OpenAI Codex CLI
+  "AGENTS.md",
+  // Gemini CLI
+  "GEMINI.md",
+  ".gemini/GEMINI.md",
 ];
 
 export interface RuleFile {
@@ -65,17 +97,22 @@ export function detectRuleFiles(): RuleFile[] {
 export interface ScanResult {
   engines: AiEngine[];
   configEntries: ConfigEntry[];
+  fileConfigs: EngineFileConfig[];
   ruleFiles: RuleFile[];
 }
 
 /**
- * One-call scan: detects engines, config hierarchy, and rule files.
+ * One-call scan: detects engines, VS Code config hierarchy, file-based configs, and rule files.
  */
 export function scanWorkspace(): ScanResult {
   const inspector = new ConfigInspector();
+  const workspaceRoot = workspace.workspaceFolders?.[0]?.uri.fsPath;
+  const fileReader = new FileConfigReader(workspaceRoot);
+
   return {
     engines: inspector.detectInstalledEngines(),
     configEntries: inspector.getAllConfigEntries(),
+    fileConfigs: fileReader.readAllEngineConfigs(),
     ruleFiles: detectRuleFiles(),
   };
 }

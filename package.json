@@ -3,9 +3,13 @@
   "displayName": "Lens AI",
   "description": "Agnostic configuration & scope inspector for GitHub Copilot, Cursor, and LLMs.",
   "license": "MIT",
-  "version": "0.1.0",
-  "publisher": "thomasswarch",
-  "icon": "resources/lens-icon.png",
+  "version": "0.1.1",
+  "publisher": "thomascouto",
+  "author": {
+    "name": "Thomas Couto",
+    "url": "https://github.com/thomascouto"
+  },
+  "icon": "resources/logo.png",
   "engines": {
     "vscode": "^1.110.0"
   },

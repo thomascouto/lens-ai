@@ -4,6 +4,10 @@ import { join } from "path";
 
 import { extensions, workspace } from "vscode";
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 export interface ConfigScope {
   defaultValue: unknown;
   globalValue: unknown;
@@ -31,11 +35,17 @@ export interface AiEngine {
   keys: string[];
 }
 
+// Internal definition type — allows CLI-only tools that have no VS Code extension.
+interface EngineDefinition extends Omit<AiEngine, "isInstalled" | "isEnabled"> {
+  /** If provided, replaces the default extension-presence check. */
+  cliDetect?: () => boolean;
+}
+
 // ---------------------------------------------------------------------------
 // Engine definitions
 // ---------------------------------------------------------------------------
 
-const AI_ENGINES: Omit<AiEngine, "isInstalled" | "isEnabled">[] = [
+const AI_ENGINES: EngineDefinition[] = [
   {
     id: "copilot",
     label: "GitHub Copilot",
@@ -65,11 +75,77 @@ const AI_ENGINES: Omit<AiEngine, "isInstalled" | "isEnabled">[] = [
     keys: ["vsCodeLmModelSelector", "enableCheckpoints"],
   },
   {
+    id: "roo-code",
+    label: "Roo Code",
+    extensionId: "RooVeterinaryInc.roo-cline",
+    namespace: "roo-cline",
+    keys: ["vsCodeLmModelSelector", "enableCheckpoints", "mode"],
+  },
+  {
     id: "codeium",
     label: "Codeium",
     extensionId: "Codeium.codeium",
     namespace: "codeium",
     keys: ["enableConfig", "enableSearch", "enableCodeLens"],
+  },
+  {
+    id: "amazon-q",
+    label: "Amazon Q",
+    extensionId: "AmazonWebServices.amazon-q-vscode",
+    namespace: "amazonQ",
+    keys: ["telemetry", "shareContentWithAWS", "workspaceContext"],
+  },
+  {
+    id: "tabnine",
+    label: "Tabnine",
+    extensionId: "TabNine.tabnine-vscode",
+    namespace: "tabnine",
+    keys: ["experimentalAutoImports", "disable"],
+  },
+  {
+    id: "supermaven",
+    label: "Supermaven",
+    extensionId: "supermaven.supermaven",
+    namespace: "supermaven",
+    keys: ["enable"],
+  },
+  {
+    id: "cody",
+    label: "Sourcegraph Cody",
+    extensionId: "sourcegraph.cody-ai",
+    namespace: "cody",
+    keys: ["enabled", "serverEndpoint", "experimental.chat"],
+  },
+  {
+    id: "gemini",
+    label: "Gemini Code Assist",
+    extensionId: "google.cloudcode",
+    namespace: "cloudcode",
+    keys: ["enableCloudCodeCopilot", "duetAI.project"],
+  },
+  {
+    id: "claude-code",
+    label: "Claude Code",
+    extensionId: "",
+    namespace: "claude-code",
+    keys: [],
+    cliDetect: () => existsSync(join(homedir(), ".claude")),
+  },
+  {
+    id: "gemini-cli",
+    label: "Gemini CLI",
+    extensionId: "",
+    namespace: "gemini-cli",
+    keys: [],
+    cliDetect: () => existsSync(join(homedir(), ".gemini")),
+  },
+  {
+    id: "codex-cli",
+    label: "Codex CLI",
+    extensionId: "",
+    namespace: "codex-cli",
+    keys: [],
+    cliDetect: () => existsSync(join(homedir(), ".codex")),
   },
 ];
 
@@ -84,6 +160,9 @@ const MODEL_RESOLVERS: Partial<Record<string, ModelResolver>> = {
   "copilot-chat": resolveCopilotModel,
   continue: resolveContinueModel,
   cline: resolveClineModel,
+  "roo-code": resolveRooCodeModel,
+  cody: resolveCodyModel,
+  "claude-code": resolveClaudeCodeModel,
 };
 
 /**
@@ -136,7 +215,8 @@ function resolveCopilotModel(): string | undefined {
           };
         };
       }
-      const pkg = ext.packageJSON as CopilotPkg;
+      // packageJSON is `any` from the VS Code API; go through unknown to avoid unsafe-assignment
+      const pkg = ext.packageJSON as unknown as CopilotPkg;
       const pkgModel =
         pkg.contributes?.configuration?.properties?.["github.copilot.advanced"]?.properties?.model
           ?.default;
@@ -173,19 +253,19 @@ function resolveContinueModel(): string | undefined {
       continue;
     }
     try {
-      const raw = readFileSync(cfgPath, "utf8");
-      const cfg = JSON.parse(raw) as {
-        models?: Array<{ model?: string; title?: string }>;
-        defaultModel?: string;
-        tabAutocompleteModel?: { model?: string };
-      };
+      const parsed: unknown = JSON.parse(readFileSync(cfgPath, "utf8"));
+      if (!isRecord(parsed)) continue;
 
-      if (cfg.defaultModel) {
-        return cfg.defaultModel;
+      if (typeof parsed["defaultModel"] === "string") {
+        return parsed["defaultModel"];
       }
-      if (cfg.models && cfg.models.length > 0) {
-        const first = cfg.models[0];
-        return first.title ?? first.model;
+      if (Array.isArray(parsed["models"]) && parsed["models"].length > 0) {
+        const first: unknown = parsed["models"][0];
+        if (isRecord(first)) {
+          const title = typeof first["title"] === "string" ? first["title"] : undefined;
+          const model = typeof first["model"] === "string" ? first["model"] : undefined;
+          return title ?? model;
+        }
       }
     } catch {
       /* malformed JSON — skip */
@@ -212,6 +292,49 @@ function resolveClineModel(): string | undefined {
   return undefined;
 }
 
+/**
+ * Roo Code is a fork of Cline and uses the same vsCodeLmModelSelector pattern.
+ */
+function resolveRooCodeModel(): string | undefined {
+  const selector = workspace
+    .getConfiguration("roo-cline")
+    .get<{ vendor?: string; family?: string }>("vsCodeLmModelSelector");
+
+  if (selector) {
+    const parts = [selector.vendor, selector.family].filter(Boolean);
+    if (parts.length > 0) {
+      return parts.join("/");
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Sourcegraph Cody stores the active model in a chat-specific setting.
+ */
+function resolveCodyModel(): string | undefined {
+  return workspace.getConfiguration("cody").get<string>("chat.models.default");
+}
+
+/**
+ * Claude Code stores its active model in ~/.claude/settings.json.
+ */
+function resolveClaudeCodeModel(): string | undefined {
+  const settingsPath = join(homedir(), ".claude", "settings.json");
+  if (!existsSync(settingsPath)) {
+    return undefined;
+  }
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(settingsPath, "utf8"));
+    if (isRecord(parsed) && typeof parsed["model"] === "string") {
+      return parsed["model"];
+    }
+  } catch {
+    /* ignore */
+  }
+  return undefined;
+}
+
 // ---------------------------------------------------------------------------
 // ConfigInspector
 // ---------------------------------------------------------------------------
@@ -219,11 +342,27 @@ function resolveClineModel(): string | undefined {
 export class ConfigInspector {
   detectInstalledEngines(): AiEngine[] {
     return AI_ENGINES.map((def) => {
-      const ext = extensions.getExtension(def.extensionId);
-      const isInstalled = ext !== undefined;
-      const isEnabled = isInstalled && ext.isActive;
+      let isInstalled: boolean;
+      let isEnabled: boolean;
 
-      const engine: AiEngine = { ...def, isInstalled, isEnabled };
+      if (def.cliDetect) {
+        isInstalled = def.cliDetect();
+        isEnabled = isInstalled;
+      } else {
+        const ext = extensions.getExtension(def.extensionId);
+        isInstalled = ext !== undefined;
+        isEnabled = ext?.isActive ?? false;
+      }
+
+      const engine: AiEngine = {
+        id: def.id,
+        label: def.label,
+        extensionId: def.extensionId,
+        namespace: def.namespace,
+        keys: def.keys,
+        isInstalled,
+        isEnabled,
+      };
 
       if (isInstalled) {
         const resolver = MODEL_RESOLVERS[def.id];

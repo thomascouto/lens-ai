@@ -15,6 +15,12 @@ import {
 } from "vscode";
 
 import { type AiEngine, type ConfigEntry, ConfigInspector } from "../services/ConfigInspector";
+import {
+  type FileConfigEntry,
+  FileConfigReader,
+  type FileScope,
+  type ScopedFile,
+} from "../services/FileConfigReader";
 import { type SecurityFinding, SecurityScanner } from "../utils/SecurityScanner";
 
 // ---------------------------------------------------------------------------
@@ -26,6 +32,11 @@ type LensItemKind =
   | "engineProp"
   | "configNamespace"
   | "configEntry"
+  | "vscodeScopeGroup"
+  | "vscodeScopeEntry"
+  | "auditScopeGroup"
+  | "fileScopeGroup"
+  | "fileEntry"
   | "rulesFile"
   | "securityAlert"
   | "empty";
@@ -45,19 +56,6 @@ export class LensTreeItem extends TreeItem {
 // Shared helpers
 // ---------------------------------------------------------------------------
 
-function scopeBadge(scope: ConfigEntry["scope"]["effectiveScope"]): string {
-  switch (scope) {
-    case "workspaceFolder":
-      return "[F]";
-    case "workspace":
-      return "[W]";
-    case "global":
-      return "[U]";
-    default:
-      return "[D]";
-  }
-}
-
 function formatValue(value: unknown): string {
   if (value === undefined || value === null) {
     return "—";
@@ -69,6 +67,35 @@ function formatValue(value: unknown): string {
     return value.toString();
   }
   return JSON.stringify(value);
+}
+
+// ---------------------------------------------------------------------------
+// Type guards
+// ---------------------------------------------------------------------------
+
+function isAiEngine(value: unknown): value is AiEngine {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "id" in value &&
+    "label" in value &&
+    "isInstalled" in value &&
+    "isEnabled" in value
+  );
+}
+
+function isFileScopeGroupMeta(value: unknown): value is FileScopeGroupMeta {
+  return typeof value === "object" && value !== null && "scopedFile" in value && "entries" in value;
+}
+
+function isVSCodeScopeGroupMeta(value: unknown): value is VSCodeScopeGroupMeta {
+  return (
+    typeof value === "object" && value !== null && "vscodeScope" in value && "entries" in value
+  );
+}
+
+function isAuditScopeGroupMeta(value: unknown): value is AuditScopeGroupMeta {
+  return typeof value === "object" && value !== null && "auditScope" in value && "entries" in value;
 }
 
 // ---------------------------------------------------------------------------
@@ -93,8 +120,14 @@ export class EnginesTreeProvider implements TreeDataProvider<LensTreeItem> {
     if (!element) {
       return this.getRootEngines();
     }
-    if (element.kind === "engine") {
-      return this.getEngineProps(element.meta as AiEngine);
+    if (element.kind === "engine" && isAiEngine(element.meta)) {
+      return this.getEngineProps(element.meta);
+    }
+    if (element.kind === "vscodeScopeGroup" && isVSCodeScopeGroupMeta(element.meta)) {
+      return this.getVSCodeScopeEntries(element.meta);
+    }
+    if (element.kind === "fileScopeGroup" && isFileScopeGroupMeta(element.meta)) {
+      return this.getFileScopeEntries(element.meta);
     }
     return [];
   }
@@ -137,32 +170,101 @@ export class EnginesTreeProvider implements TreeDataProvider<LensTreeItem> {
   }
 
   private getEngineProps(engine: AiEngine): LensTreeItem[] {
-    const entries = this.inspector.getEntriesForEngine(engine.id);
-    if (entries.length === 0) {
+    const vsEntries = this.inspector.getEntriesForEngine(engine.id);
+    const workspaceRoot = workspace.workspaceFolders?.[0]?.uri.fsPath;
+    const fileConfig = new FileConfigReader(workspaceRoot).readEngineConfig(engine.id);
+
+    const items: LensTreeItem[] = [
+      ...this.buildVSCodeScopeGroups(vsEntries),
+      ...(fileConfig?.scopedFiles.map((sf) => this.buildFileScopeGroup(sf, fileConfig.entries)) ??
+        []),
+    ];
+
+    if (items.length === 0) {
       const none = new LensTreeItem("No inspectable keys", TreeItemCollapsibleState.None, "empty");
       none.iconPath = new ThemeIcon("dash");
       return [none];
     }
 
-    return entries.map((entry) => {
-      const badge = scopeBadge(entry.scope.effectiveScope);
-      const value = formatValue(entry.scope.effectiveValue);
+    return items;
+  }
+
+  private buildVSCodeScopeGroups(entries: ConfigEntry[]): LensTreeItem[] {
+    if (entries.length === 0) return [];
+
+    const defs: Array<{
+      vscodeScope: VSCodeScopeGroupMeta["vscodeScope"];
+      label: string;
+      icon: string;
+    }> = [
+      { vscodeScope: "global", label: "User (Global)", icon: "account" },
+      { vscodeScope: "workspace", label: "Workspace", icon: "folder" },
+      { vscodeScope: "workspaceFolder", label: "Workspace Folder", icon: "folder-opened" },
+    ];
+
+    return defs.map(({ vscodeScope, label, icon }) => {
+      const scopeEntries = entries.filter((e) => {
+        if (vscodeScope === "global") return e.scope.globalValue !== undefined;
+        if (vscodeScope === "workspace") return e.scope.workspaceValue !== undefined;
+        return e.scope.workspaceFolderValue !== undefined;
+      });
+
+      const meta: VSCodeScopeGroupMeta = { vscodeScope, label, entries: scopeEntries };
+      const hasEntries = scopeEntries.length > 0;
       const item = new LensTreeItem(
-        `${badge} ${entry.key}`,
+        label,
+        hasEntries ? TreeItemCollapsibleState.Collapsed : TreeItemCollapsibleState.None,
+        "vscodeScopeGroup",
+        meta,
+      );
+      item.iconPath = new ThemeIcon(icon);
+      item.description = hasEntries ? `${scopeEntries.length.toString()} key(s)` : "no overrides";
+      item.tooltip = hasEntries
+        ? `${label} — ${scopeEntries.length.toString()} key(s) explicitly set`
+        : `${label} — no settings overridden at this scope`;
+      return item;
+    });
+  }
+
+  private getVSCodeScopeEntries(meta: VSCodeScopeGroupMeta): LensTreeItem[] {
+    if (meta.entries.length === 0) {
+      const none = new LensTreeItem(
+        "No overrides at this scope",
         TreeItemCollapsibleState.None,
-        "engineProp",
+        "empty",
+      );
+      none.iconPath = new ThemeIcon("dash");
+      return [none];
+    }
+
+    return meta.entries.map((entry) => {
+      const scopedValue =
+        meta.vscodeScope === "global"
+          ? entry.scope.globalValue
+          : meta.vscodeScope === "workspace"
+            ? entry.scope.workspaceValue
+            : entry.scope.workspaceFolderValue;
+
+      const value = formatValue(scopedValue);
+      const isEffective = entry.scope.effectiveScope === meta.vscodeScope;
+
+      const item = new LensTreeItem(
+        entry.key,
+        TreeItemCollapsibleState.None,
+        "vscodeScopeEntry",
         entry,
       );
       item.description = value;
+      item.iconPath = isEffective
+        ? new ThemeIcon("circle-filled", new ThemeColor("testing.iconPassed"))
+        : new ThemeIcon("circle-outline");
       item.tooltip = [
-        `Full key: ${entry.fullKey}`,
-        `Default: ${formatValue(entry.scope.defaultValue)}`,
-        `Global [U]: ${formatValue(entry.scope.globalValue)}`,
-        `Workspace [W]: ${formatValue(entry.scope.workspaceValue)}`,
-        `Folder [F]: ${formatValue(entry.scope.workspaceFolderValue)}`,
-        `Effective: ${value}`,
+        `Key: ${entry.fullKey}`,
+        `Value here: ${value}`,
+        isEffective
+          ? "✓ This scope wins (effective value)"
+          : `Overridden by: ${entry.scope.effectiveScope}`,
       ].join("\n");
-      item.iconPath = new ThemeIcon("settings");
       item.command = {
         command: "workbench.action.openSettings",
         title: "Open Settings",
@@ -171,10 +273,103 @@ export class EnginesTreeProvider implements TreeDataProvider<LensTreeItem> {
       return item;
     });
   }
+
+  private buildFileScopeGroup(sf: ScopedFile, allEntries: FileConfigEntry[]): LensTreeItem {
+    const SCOPE_LABELS: Record<FileScope, string> = {
+      system: "System",
+      user: "User",
+      project: "Project",
+      projectLocal: "Project Local",
+    };
+    const SCOPE_ICONS: Record<FileScope, string> = {
+      system: "server",
+      user: "home",
+      project: "folder",
+      projectLocal: "folder-opened",
+    };
+
+    const label = SCOPE_LABELS[sf.scope];
+    const keysInScope = allEntries.filter((e) => e.values.some((v) => v.scope === sf.scope));
+    const hasEntries = sf.exists && keysInScope.length > 0;
+
+    const meta: FileScopeGroupMeta = { scopedFile: sf, entries: allEntries };
+    const item = new LensTreeItem(
+      label,
+      hasEntries ? TreeItemCollapsibleState.Collapsed : TreeItemCollapsibleState.None,
+      "fileScopeGroup",
+      meta,
+    );
+    item.iconPath = new ThemeIcon(SCOPE_ICONS[sf.scope]);
+    item.description = sf.exists ? sf.filePath : `${sf.filePath} (not found)`;
+    item.tooltip = sf.exists
+      ? `${label} · ${keysInScope.length.toString()} key(s)\n${sf.filePath}`
+      : `File not found:\n${sf.filePath}`;
+
+    if (sf.exists) {
+      item.command = {
+        command: "vscode.open",
+        title: "Open Config File",
+        arguments: [Uri.file(sf.filePath)],
+      };
+    }
+
+    return item;
+  }
+
+  private getFileScopeEntries(meta: FileScopeGroupMeta): LensTreeItem[] {
+    const { scopedFile, entries } = meta;
+    const scopeEntries = entries.filter((e) => e.values.some((v) => v.scope === scopedFile.scope));
+
+    if (scopeEntries.length === 0) {
+      const none = new LensTreeItem(
+        "No keys at this scope",
+        TreeItemCollapsibleState.None,
+        "empty",
+      );
+      none.iconPath = new ThemeIcon("dash");
+      return [none];
+    }
+
+    return scopeEntries.map((entry) => {
+      const valueInScope = entry.values.find((v) => v.scope === scopedFile.scope);
+      const value = formatValue(valueInScope?.value);
+      const isEffective = entry.effectiveScope === scopedFile.scope;
+
+      const item = new LensTreeItem(entry.key, TreeItemCollapsibleState.None, "fileEntry", entry);
+      item.description = value;
+      item.iconPath = isEffective
+        ? new ThemeIcon("circle-filled", new ThemeColor("testing.iconPassed"))
+        : new ThemeIcon("circle-outline");
+      item.tooltip = [
+        `Key: ${entry.key}`,
+        `Value here: ${value}`,
+        isEffective
+          ? "✓ This scope wins (effective value)"
+          : `Overridden by: ${entry.effectiveScope}`,
+      ].join("\n");
+      item.command = {
+        command: "vscode.open",
+        title: "Open Config File",
+        arguments: [Uri.file(scopedFile.filePath)],
+      };
+      return item;
+    });
+  }
+}
+
+interface VSCodeScopeGroupMeta {
+  vscodeScope: "global" | "workspace" | "workspaceFolder";
+  label: string;
+  entries: ConfigEntry[];
+}
+
+interface FileScopeGroupMeta {
+  scopedFile: ScopedFile;
+  entries: FileConfigEntry[];
 }
 
 // ---------------------------------------------------------------------------
-// Effective Configs Provider
+// Effective Configs Provider — cross-engine override audit
 // ---------------------------------------------------------------------------
 
 export class ConfigsTreeProvider implements TreeDataProvider<LensTreeItem> {
@@ -193,57 +388,89 @@ export class ConfigsTreeProvider implements TreeDataProvider<LensTreeItem> {
 
   getChildren(element?: LensTreeItem): LensTreeItem[] {
     if (!element) {
-      return this.getNamespaceGroups();
+      return this.getAuditScopeGroups();
     }
-    if (element.kind === "configNamespace") {
-      return this.getConfigEntries(element.meta as string);
+    if (element.kind === "auditScopeGroup" && isAuditScopeGroupMeta(element.meta)) {
+      return this.getAuditEntries(element.meta);
     }
     return [];
   }
 
-  private getNamespaceGroups(): LensTreeItem[] {
+  private getAuditScopeGroups(): LensTreeItem[] {
     const allEntries = this.inspector.getAllConfigEntries();
-    const namespaces = [...new Set(allEntries.map((e) => e.namespace))];
 
-    return namespaces.map((ns) => {
-      const item = new LensTreeItem(ns, TreeItemCollapsibleState.Collapsed, "configNamespace", ns);
-      const overrides = allEntries.filter(
-        (e) =>
-          e.namespace === ns &&
-          (e.scope.workspaceValue !== undefined || e.scope.workspaceFolderValue !== undefined),
-      ).length;
-      item.description = overrides > 0 ? `${overrides.toString()} override(s)` : undefined;
-      item.iconPath = new ThemeIcon("symbol-namespace");
+    const defs: Array<{
+      auditScope: AuditScopeGroupMeta["auditScope"];
+      label: string;
+      icon: string;
+    }> = [
+      { auditScope: "global", label: "User (Global)", icon: "account" },
+      { auditScope: "workspace", label: "Workspace", icon: "folder" },
+      { auditScope: "workspaceFolder", label: "Workspace Folder", icon: "folder-opened" },
+    ];
+
+    return defs.map(({ auditScope, label, icon }) => {
+      const scopeEntries = allEntries.filter((e) => {
+        if (auditScope === "global") return e.scope.globalValue !== undefined;
+        if (auditScope === "workspace") return e.scope.workspaceValue !== undefined;
+        return e.scope.workspaceFolderValue !== undefined;
+      });
+
+      const meta: AuditScopeGroupMeta = { auditScope, label, entries: scopeEntries };
+      const hasEntries = scopeEntries.length > 0;
+
+      const item = new LensTreeItem(
+        label,
+        hasEntries ? TreeItemCollapsibleState.Expanded : TreeItemCollapsibleState.None,
+        "auditScopeGroup",
+        meta,
+      );
+      item.iconPath = new ThemeIcon(icon);
+      item.description = hasEntries
+        ? `${scopeEntries.length.toString()} override(s)`
+        : "no overrides";
+      item.tooltip = hasEntries
+        ? `${label} — ${scopeEntries.length.toString()} key(s) overridden across all engines`
+        : `${label} — nothing overridden at this scope`;
       return item;
     });
   }
 
-  private getConfigEntries(namespace: string): LensTreeItem[] {
-    const entries = this.inspector.getAllConfigEntries().filter((e) => e.namespace === namespace);
+  private getAuditEntries(meta: AuditScopeGroupMeta): LensTreeItem[] {
+    if (meta.entries.length === 0) {
+      const none = new LensTreeItem("No overrides", TreeItemCollapsibleState.None, "empty");
+      none.iconPath = new ThemeIcon("dash");
+      return [none];
+    }
 
-    return entries.map((entry) => {
-      const badge = scopeBadge(entry.scope.effectiveScope);
-      const value = formatValue(entry.scope.effectiveValue);
-      const isOverridden =
-        entry.scope.workspaceValue !== undefined || entry.scope.workspaceFolderValue !== undefined;
+    return meta.entries.map((entry) => {
+      const scopedValue =
+        meta.auditScope === "global"
+          ? entry.scope.globalValue
+          : meta.auditScope === "workspace"
+            ? entry.scope.workspaceValue
+            : entry.scope.workspaceFolderValue;
+
+      const value = formatValue(scopedValue);
+      const isEffective = entry.scope.effectiveScope === meta.auditScope;
 
       const item = new LensTreeItem(
-        `${badge} ${entry.key}`,
+        `${entry.namespace}  ·  ${entry.key}`,
         TreeItemCollapsibleState.None,
         "configEntry",
         entry,
       );
       item.description = value;
-      item.iconPath = isOverridden
-        ? new ThemeIcon("symbol-property", new ThemeColor("charts.yellow"))
-        : new ThemeIcon("symbol-property");
+      item.iconPath = isEffective
+        ? new ThemeIcon("circle-filled", new ThemeColor("testing.iconPassed"))
+        : new ThemeIcon("circle-outline", new ThemeColor("disabledForeground"));
       item.tooltip = [
-        `Full key: ${entry.fullKey}`,
+        `Key: ${entry.fullKey}`,
+        `Value at this scope: ${value}`,
         `Default: ${formatValue(entry.scope.defaultValue)}`,
-        `Global [U]: ${formatValue(entry.scope.globalValue)}`,
-        `Workspace [W]: ${formatValue(entry.scope.workspaceValue)}`,
-        `Folder [F]: ${formatValue(entry.scope.workspaceFolderValue)}`,
-        `→ Effective: ${value}`,
+        isEffective
+          ? "✓ This scope wins (effective value)"
+          : `Overridden by: ${entry.scope.effectiveScope}`,
       ].join("\n");
       item.command = {
         command: "workbench.action.openSettings",
@@ -255,15 +482,30 @@ export class ConfigsTreeProvider implements TreeDataProvider<LensTreeItem> {
   }
 }
 
+interface AuditScopeGroupMeta {
+  auditScope: "global" | "workspace" | "workspaceFolder";
+  label: string;
+  entries: ConfigEntry[];
+}
+
 // ---------------------------------------------------------------------------
 // Instruction Files Provider
 // ---------------------------------------------------------------------------
 
 const RULES_FILENAMES = [
+  ".github/copilot-instructions.md",
+  ".instructions.md",
   ".cursorrules",
   ".clinerules",
-  ".instructions.md",
-  ".github/copilot-instructions.md",
+  ".roomodes",
+  "CLAUDE.md",
+  ".claude/CLAUDE.md",
+  ".windsurfrules",
+  ".aiderrules",
+  "AGENTS.md",
+  // Gemini CLI
+  "GEMINI.md",
+  ".gemini/GEMINI.md",
 ];
 
 export class RulesTreeProvider implements TreeDataProvider<LensTreeItem> {

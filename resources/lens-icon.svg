@@ -1,0 +1,15 @@
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <path d="M128 256L0 188.5L128 121L256 188.5L128 256Z" fill="#4B0096"/>
+
+  <path d="M128 188.5L0 121L128 53.5L256 121L128 188.5Z" fill="#00CFFF" fill-opacity="0.25"/>
+  <path d="M128 188.5L0 121L128 53.5L256 121L128 188.5Z" stroke="#00CFFF" stroke-width="2" fill="none"/>
+
+  <path d="M128 121L0 53.5L128 0L256 53.5L128 121Z" fill="url(#topLayerGradient)"/>
+
+  <defs>
+    <linearGradient id="topLayerGradient" x1="128" y1="0" x2="128" y2="121" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#7B00FF"/>
+      <stop offset="1" stop-color="#4B0096"/>
+    </linearGradient>
+  </defs>
+</svg>

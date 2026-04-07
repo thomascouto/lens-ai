@@ -1,6 +1,19 @@
-import { commands, Uri, ViewColumn, type Webview, type WebviewPanel, window } from "vscode";
+import {
+  commands,
+  Uri,
+  ViewColumn,
+  type Webview,
+  type WebviewPanel,
+  window,
+  workspace,
+} from "vscode";
 
 import { type ConfigEntry, ConfigInspector } from "../services/ConfigInspector";
+import {
+  type EngineFileConfig,
+  FileConfigReader,
+  type FileScope,
+} from "../services/FileConfigReader";
 
 const VIEW_TYPE = "lensMatrix";
 let currentPanel: WebviewPanel | undefined;
@@ -43,9 +56,12 @@ function updateWebview(webview: Webview): void {
   const inspector = new ConfigInspector();
   const entries = inspector.getAllConfigEntries();
   const engines = inspector.detectInstalledEngines();
+  const workspaceRoot = workspace.workspaceFolders?.[0]?.uri.fsPath;
+  const fileConfigs = new FileConfigReader(workspaceRoot).readAllEngineConfigs();
   webview.html = buildHtml(
     entries,
     engines.filter((e) => e.isInstalled),
+    fileConfigs,
   );
 }
 
@@ -62,6 +78,7 @@ function serialiseValue(value: NonNullable<unknown>): string {
 function buildHtml(
   entries: ConfigEntry[],
   installedEngines: ReturnType<ConfigInspector["detectInstalledEngines"]>,
+  fileConfigs: EngineFileConfig[],
 ): string {
   const rows = entries.map((entry) => buildRow(entry)).join("");
   const engineBadges =
@@ -228,6 +245,29 @@ function buildHtml(
   .empty-state { text-align: center; padding: 48px 20px; color: var(--tag-fg); }
   .empty-state p { margin-top: 8px; font-size: 12px; }
 
+  .section-title {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--tag-fg);
+    margin: 28px 0 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .section-title::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  .scope-S { background: rgba(160,100,240,0.15); color: #a064f0; }
+  .scope-P { background: rgba(100,220,100,0.15); color: #64dc64; }
+  .scope-L { background: rgba(240,160,48,0.15); color: #f0a030; }
+  .scope-file-eff { background: rgba(0,255,255,0.15); color: var(--cyan); }
+
   footer { margin-top: 20px; font-size: 11px; color: #555; text-align: right; }
 </style>
 </head>
@@ -269,6 +309,8 @@ function buildHtml(
   </table>
 </div>
 
+${buildFileConfigSection(fileConfigs)}
+
 <footer>Lens AI · All data is local · No telemetry</footer>
 
 <script>
@@ -284,6 +326,55 @@ function buildHtml(
 </script>
 </body>
 </html>`;
+}
+
+function buildFileConfigSection(fileConfigs: EngineFileConfig[]): string {
+  const populated = fileConfigs.filter((fc) => fc.entries.length > 0);
+  if (populated.length === 0) return "";
+
+  const rows = populated
+    .flatMap((fc) =>
+      fc.entries.map((entry) => {
+        const scopes: FileScope[] = ["system", "user", "project", "projectLocal"];
+        const cells = scopes
+          .map((scope) => {
+            const match = entry.values.find((v) => v.scope === scope);
+            const isEffective = entry.effectiveScope === scope;
+            if (!match) return `<td><span class="val-empty">—</span></td>`;
+            const text = esc(serialiseValue(match.value ?? ""));
+            const cls = isEffective ? "val-effective" : "val";
+            const badge = isEffective ? `<span class="scope-badge scope-file-eff">eff</span>` : "";
+            return `<td>${badge}<span class="${cls}">${text}</span></td>`;
+          })
+          .join("");
+
+        return `<tr>
+  <td>
+    <div class="col-key">${esc(entry.key)}</div>
+    <div class="col-ns">${esc(fc.engineId)}</div>
+  </td>
+  ${cells}
+</tr>`;
+      }),
+    )
+    .join("");
+
+  return `
+<div class="section-title">File-based Configs (system · user · project · local)</div>
+<div class="matrix-wrapper">
+  <table class="matrix">
+    <thead>
+      <tr>
+        <th>Property</th>
+        <th><span class="scope-badge scope-S">S</span> System</th>
+        <th><span class="scope-badge scope-U">U</span> User</th>
+        <th><span class="scope-badge scope-P">P</span> Project</th>
+        <th><span class="scope-badge scope-L">L</span> Local</th>
+      </tr>
+    </thead>
+    <tbody>${rows}</tbody>
+  </table>
+</div>`;
 }
 
 function buildRow(entry: ConfigEntry): string {
