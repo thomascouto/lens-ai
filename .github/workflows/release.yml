@@ -63,47 +63,46 @@ jobs:
           files: coverage/lcov.info
           fail_ci_if_error: true
 
-  release:
-    name: Release
-    runs-on: ubuntu-latest
-    needs: quality
+  # release:
+  #   name: Release
+  #   runs-on: ubuntu-latest
+  #   needs: quality
+  #   steps:
+  #     - name: Checkout
+  #       uses: actions/checkout@v4
+  #       with:
+  #         fetch-depth: 0
+  #         persist-credentials: false
 
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          persist-credentials: false
+  #     - name: Setup pnpm
+  #       uses: pnpm/action-setup@v4
+  #       with:
+  #         version: 9
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9
+  #     - name: Setup Node.js
+  #       uses: actions/setup-node@v4
+  #       with:
+  #         node-version: 20
+  #         cache: pnpm
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: pnpm
+  #     - name: Install dependencies
+  #       run: pnpm install --frozen-lockfile
 
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+  #     - name: Compile
+  #       run: pnpm compile
 
-      - name: Compile
-        run: pnpm compile
-
-      - name: Release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VSCE_PAT: ${{ secrets.VSCE_PAT }}
-        run: >
-          npx
-          --package semantic-release@24
-          --package @semantic-release/commit-analyzer@13
-          --package @semantic-release/release-notes-generator@14
-          --package @semantic-release/changelog@6
-          --package @semantic-release/npm@12
-          --package @semantic-release/git@10
-          --package @semantic-release/github@10
-          --package semantic-release-vsce@5
-          semantic-release
+  #     - name: Release
+  #       env:
+  #         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  #         VSCE_PAT: ${{ secrets.VSCE_PAT }}
+  #       run: >
+  #         npx
+  #         --package semantic-release@24
+  #         --package @semantic-release/commit-analyzer@13
+  #         --package @semantic-release/release-notes-generator@14
+  #         --package @semantic-release/changelog@6
+  #         --package @semantic-release/npm@12
+  #         --package @semantic-release/git@10
+  #         --package @semantic-release/github@10
+  #         --package semantic-release-vsce@5
+  #         semantic-release
