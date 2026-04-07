@@ -12,6 +12,14 @@
   "categories": [
     "Other"
   ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/thomascouto/lens-ai"
+  },
+  "bugs": {
+    "url": "https://github.com/thomascouto/lens-ai/issues"
+  },
+  "homepage": "https://github.com/thomascouto/lens-ai#readme",
   "keywords": [
     "copilot",
     "cursor",
