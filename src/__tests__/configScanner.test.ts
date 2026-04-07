@@ -146,9 +146,9 @@ describe("scanWorkspace", () => {
     expect(result).toHaveProperty("ruleFiles");
   });
 
-  it("engines array contains all 5 supported AI engines", () => {
+  it("engines array contains all 14 supported AI engines", () => {
     const { engines } = scanWorkspace();
-    expect(engines).toHaveLength(5);
+    expect(engines).toHaveLength(14);
   });
 
   it("ruleFiles reflects detected rule files in workspace", () => {

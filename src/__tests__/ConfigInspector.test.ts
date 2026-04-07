@@ -144,9 +144,9 @@ describe("ConfigInspector", () => {
   // -------------------------------------------------------------------------
 
   describe("detectInstalledEngines", () => {
-    it("returns all 5 engine definitions", () => {
+    it("returns all 14 engine definitions", () => {
       const engines = inspector.detectInstalledEngines();
-      expect(engines).toHaveLength(5);
+      expect(engines).toHaveLength(14);
     });
 
     it("marks extension as not installed when getExtension returns undefined", () => {
